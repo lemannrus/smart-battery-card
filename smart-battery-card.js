@@ -257,21 +257,27 @@ class SmartBatteryCard extends LitBase {
 
   /**
    * Get next scheduled outage information
-   * Returns: { startTime: Date|null, minutesUntil: number|null }
+   * Returns: { startTime: Date|null, minutesUntil: number|null, isEmergency: boolean }
    */
   _getNextOutage() {
-    if (!this._config.next_outage_time_entity) return { startTime: null, minutesUntil: null };
+    if (!this._config.next_outage_time_entity) return { startTime: null, minutesUntil: null, isEmergency: false };
 
     const nextOutageSt = this.hass?.states?.[this._config.next_outage_time_entity];
-    if (!nextOutageSt || !nextOutageSt.state || nextOutageSt.state === 'unknown' || nextOutageSt.state === 'unavailable') {
-      return { startTime: null, minutesUntil: null };
+
+    // Check if state is "unknown" - this indicates an emergency outage
+    if (nextOutageSt && nextOutageSt.state === 'unknown') {
+      return { startTime: null, minutesUntil: null, isEmergency: true };
+    }
+
+    if (!nextOutageSt || !nextOutageSt.state || nextOutageSt.state === 'unavailable') {
+      return { startTime: null, minutesUntil: null, isEmergency: false };
     }
 
     const startTime = this._parseDateTime(nextOutageSt.state);
-    if (!startTime) return { startTime: null, minutesUntil: null };
+    if (!startTime) return { startTime: null, minutesUntil: null, isEmergency: false };
 
     const minutesUntil = Math.max(0, Math.round((startTime - new Date()) / 60000));
-    return { startTime, minutesUntil };
+    return { startTime, minutesUntil, isEmergency: false };
   }
 
   /**
@@ -588,8 +594,21 @@ class SmartBatteryCard extends LitBase {
             </div>
           ` : ''}
           
-          <!-- Next Outage Info (show only if no active outage) -->
-          ${!outageStatus.isActive && nextOutage.startTime ? html`
+          <!-- Emergency Outage Warning (when next outage is unknown) -->
+          ${!outageStatus.isActive && nextOutage.isEmergency ? html`
+            <div class="outage-compact outage-emergency">
+              <div class="outage-compact-header">
+                <span class="outage-icon">⚠️</span>
+                <span class="outage-label">Emergency Outage Applied</span>
+              </div>
+              <div class="outage-compact-info">
+                <span class="compact-value-lg">Scheduled outage information unavailable</span>
+              </div>
+            </div>
+          ` : ''}
+          
+          <!-- Next Outage Info (show only if no active outage and not emergency) -->
+          ${!outageStatus.isActive && !nextOutage.isEmergency && nextOutage.startTime ? html`
             <div class="outage-compact outage-next">
               <div class="outage-compact-header">
                 <span class="outage-icon">📅</span>
@@ -990,6 +1009,10 @@ class SmartBatteryCard extends LitBase {
       }
       .outage-compact.outage-next {
         border-color: var(--info-color, #2196f3);
+      }
+      .outage-compact.outage-emergency {
+        border-color: var(--warning-color, #fbc02d);
+        background: rgba(251, 192, 45, 0.1);
       }
       .outage-compact-header {
         display: -webkit-box;
