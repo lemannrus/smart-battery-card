@@ -198,6 +198,7 @@ palette: gradient
 ```
 
 **Note:** These examples use the [**HA Yasno Outages**](https://github.com/denysdovhan/ha-yasno-outages) integration for Ukrainian electricity outage information. Entity names will vary based on your city and DTEK group. Install it via HACS for automatic outage schedule tracking.
+Also you need to install the [Ecoflow Cloud](https://github.com/tolwi/hassio-ecoflow-cloud) to be able to get the ecoflow sensors data
 
 ## ⚙️ Configuration Options
 
