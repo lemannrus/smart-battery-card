@@ -5,6 +5,18 @@ All notable changes to the Smart Battery Card will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.5.0] - 2026-08-21
+
+### Added
+- Compact responsive rows for three and four batteries.
+- Yasno v3 `status_today` support via `outage_schedule_status_entity`.
+- Visible warning when configured outage entities are missing or unavailable.
+
+### Changed
+- Active outage end time now falls back to the electricity sensor's `event_end` attribute.
+- An `unknown` next-outage sensor is treated as unavailable data, not as proof of an emergency outage.
+- Documentation now reflects address-based Yasno v3 setup and separates the card's summary from the integration's calendar graph.
+
 ## [0.4.0] - 2025-11-14
 
 ### 🎉 Rebranding
@@ -342,4 +354,3 @@ For issues, feature requests, or questions:
 ---
 
 *Made with ❤️ for the Home Assistant community*
-

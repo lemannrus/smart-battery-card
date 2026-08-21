@@ -23,6 +23,7 @@
 * outage_status_entity: sensor.outage_status
 * outage_end_time_entity: sensor.outage_end_time
 * next_outage_time_entity: sensor.next_outage_time
+* outage_schedule_status_entity: sensor.outage_status_today
 * 
 * # Display settings (applied to all batteries)
 * green: 60
@@ -76,6 +77,7 @@ class SmartBatteryCard extends LitBase {
       outage_status_entity: config.outage_status_entity || null,
       outage_end_time_entity: config.outage_end_time_entity || null,
       next_outage_time_entity: config.next_outage_time_entity || null,
+      outage_schedule_status_entity: config.outage_schedule_status_entity || null,
       green: typeof config.green === 'number' ? config.green : 60,
       yellow: typeof config.yellow === 'number' ? config.yellow : 25,
       show_state: config.show_state !== false,
@@ -88,7 +90,7 @@ class SmartBatteryCard extends LitBase {
 
   getCardSize() {
     const numBatteries = this._config?.batteries?.length || 1;
-    return numBatteries === 1 ? 3 : Math.ceil(numBatteries / 2) + 2;
+    return Math.ceil(numBatteries / 4) + 2;
   }
 
   _pct(batteryIndex) {
@@ -230,54 +232,81 @@ class SmartBatteryCard extends LitBase {
    * Returns: { isActive: boolean, endTime: Date|null, minutesRemaining: number|null }
    */
   _getOutageStatus() {
-    if (!this._config.outage_status_entity) return { isActive: false, endTime: null, minutesRemaining: null };
+    if (!this._config.outage_status_entity) {
+      return { isActive: false, endTime: null, minutesRemaining: null, isUnavailable: false };
+    }
 
     const statusSt = this.hass?.states?.[this._config.outage_status_entity];
-    if (!statusSt) return { isActive: false, endTime: null, minutesRemaining: null };
+    if (!statusSt) {
+      return { isActive: false, endTime: null, minutesRemaining: null, isUnavailable: true };
+    }
 
     // Check if outage is active (support various formats: on/off, true/false, active/inactive, outage/connected)
     const state = statusSt.state?.toLowerCase();
     const isActive = state === 'on' || state === 'true' || state === 'active' || state === '1' || state === 'outage';
 
+    const isUnavailable = !state || state === 'unknown' || state === 'unavailable';
     let endTime = null;
     let minutesRemaining = null;
 
-    if (isActive && this._config.outage_end_time_entity) {
-      const endTimeSt = this.hass?.states?.[this._config.outage_end_time_entity];
-      if (endTimeSt && endTimeSt.state && endTimeSt.state !== 'unknown' && endTimeSt.state !== 'unavailable') {
-        endTime = this._parseDateTime(endTimeSt.state);
-        if (endTime) {
-          minutesRemaining = Math.max(0, Math.round((endTime - new Date()) / 60000));
-        }
+    if (isActive) {
+      const endTimeSt = this._config.outage_end_time_entity
+        ? this.hass?.states?.[this._config.outage_end_time_entity]
+        : null;
+      const endTimeValue = this._validEntityState(endTimeSt)
+        ? endTimeSt.state
+        : statusSt.attributes?.event_end;
+
+      endTime = this._parseDateTime(endTimeValue);
+      if (endTime) {
+        minutesRemaining = Math.max(0, Math.round((endTime - new Date()) / 60000));
       }
     }
 
-    return { isActive, endTime, minutesRemaining };
+    return { isActive, endTime, minutesRemaining, isUnavailable };
   }
 
   /**
    * Get next scheduled outage information
-   * Returns: { startTime: Date|null, minutesUntil: number|null, isEmergency: boolean }
+   * Returns: { startTime: Date|null, minutesUntil: number|null, isUnavailable: boolean }
    */
   _getNextOutage() {
-    if (!this._config.next_outage_time_entity) return { startTime: null, minutesUntil: null, isEmergency: false };
-
-    const nextOutageSt = this.hass?.states?.[this._config.next_outage_time_entity];
-
-    // Check if state is "unknown" - this indicates an emergency outage
-    if (nextOutageSt && nextOutageSt.state === 'unknown') {
-      return { startTime: null, minutesUntil: null, isEmergency: true };
+    if (!this._config.next_outage_time_entity) {
+      return { startTime: null, minutesUntil: null, isUnavailable: false };
     }
 
-    if (!nextOutageSt || !nextOutageSt.state || nextOutageSt.state === 'unavailable') {
-      return { startTime: null, minutesUntil: null, isEmergency: false };
+    const nextOutageSt = this.hass?.states?.[this._config.next_outage_time_entity];
+    if (!this._validEntityState(nextOutageSt)) {
+      return { startTime: null, minutesUntil: null, isUnavailable: true };
     }
 
     const startTime = this._parseDateTime(nextOutageSt.state);
-    if (!startTime) return { startTime: null, minutesUntil: null, isEmergency: false };
+    if (!startTime) return { startTime: null, minutesUntil: null, isUnavailable: true };
 
     const minutesUntil = Math.max(0, Math.round((startTime - new Date()) / 60000));
-    return { startTime, minutesUntil, isEmergency: false };
+    return { startTime, minutesUntil, isUnavailable: false };
+  }
+
+  _validEntityState(entityState) {
+    const state = entityState?.state?.toLowerCase();
+    return !!state && state !== 'unknown' && state !== 'unavailable';
+  }
+
+  _getOutageScheduleStatus() {
+    if (!this._config.outage_schedule_status_entity) {
+      return { isEmergency: false, hasNoOutages: false, isUnavailable: false };
+    }
+
+    const statusSt = this.hass?.states?.[this._config.outage_schedule_status_entity];
+    if (!this._validEntityState(statusSt)) {
+      return { isEmergency: false, hasNoOutages: false, isUnavailable: true };
+    }
+
+    return {
+      isEmergency: statusSt.state.toLowerCase() === 'emergency_shutdowns',
+      hasNoOutages: statusSt.state.toLowerCase() === 'no_outages',
+      isUnavailable: false,
+    };
   }
 
   /**
@@ -352,7 +381,7 @@ class SmartBatteryCard extends LitBase {
       // Get actual charge time from sensor
       const chargeSt = this.hass?.states?.[battery.charge_remaining_time_entity];
       if (chargeSt && chargeSt.state && chargeSt.state !== 'unknown' && chargeSt.state !== 'unavailable') {
-        const chargeTimeNeeded = Number(chargeSt.state);
+        const chargeTimeNeeded = this._parseTimeValue(chargeSt.state);
 
         if (Number.isFinite(chargeTimeNeeded) && chargeTimeNeeded > 0) {
           canChargeBeforeNext = nextOutage.minutesUntil >= chargeTimeNeeded;
@@ -555,7 +584,16 @@ class SmartBatteryCard extends LitBase {
     const numBatteries = this._config.batteries.length;
     const outageStatus = this._getOutageStatus();
     const nextOutage = this._getNextOutage();
+    const scheduleStatus = this._getOutageScheduleStatus();
     const analysis = this._analyzeOutageSituation();
+    const hasOutageConfig = !!(
+      this._config.outage_status_entity ||
+      this._config.next_outage_time_entity ||
+      this._config.outage_schedule_status_entity
+    );
+    const outageDataUnavailable = outageStatus.isUnavailable ||
+      scheduleStatus.isUnavailable ||
+      (!outageStatus.isActive && nextOutage.isUnavailable && !scheduleStatus.hasNoOutages);
 
     // Render all batteries
     const batteryElements = this._config.batteries.map((_, idx) =>
@@ -564,12 +602,17 @@ class SmartBatteryCard extends LitBase {
 
     return html`
       <ha-card class="eco-card-vertical">
-        <div class="batteries-container">
+        <div
+          class="batteries-container"
+          data-count="${numBatteries}"
+          data-density="${numBatteries >= 4 ? 'dense' : (numBatteries === 3 ? 'compact' : 'regular')}"
+          style="--battery-columns: ${Math.min(numBatteries, 4)}"
+        >
           ${batteryElements}
         </div>
         
         <!-- Outage information (for selected battery) -->
-        <div class="outage-info-container">
+        ${hasOutageConfig ? html`<div class="outage-info-container">
           <!-- Outage Analysis Warning/Info -->
           ${analysis.message ? html`
             <div class="outage-analysis ${analysis.warningLevel}">
@@ -578,24 +621,28 @@ class SmartBatteryCard extends LitBase {
           ` : ''}
           
           <!-- Current Outage Info (show only if active) -->
-          ${outageStatus.isActive && outageStatus.endTime ? html`
+          ${outageStatus.isActive ? html`
             <div class="outage-compact">
               <div class="outage-compact-header">
                 <span class="outage-icon">🔌</span>
                 <span class="outage-label">Outage Active</span>
               </div>
               <div class="outage-compact-info">
-                <span class="compact-label">Ends:</span>
-                <span class="compact-value">${this._formatDateTime(outageStatus.endTime)}</span>
-                <span class="compact-separator">•</span>
-                <span class="compact-label">Remaining:</span>
-                <span class="compact-value">${this._formatMinutes(outageStatus.minutesRemaining)}</span>
+                ${outageStatus.endTime ? html`
+                  <span class="compact-label">Ends:</span>
+                  <span class="compact-value">${this._formatDateTime(outageStatus.endTime)}</span>
+                  <span class="compact-separator">•</span>
+                  <span class="compact-label">Remaining:</span>
+                  <span class="compact-value">${this._formatMinutes(outageStatus.minutesRemaining)}</span>
+                ` : html`
+                  <span class="compact-value-lg">End time unavailable</span>
+                `}
               </div>
             </div>
           ` : ''}
           
-          <!-- Emergency Outage Warning (when next outage is unknown) -->
-          ${!outageStatus.isActive && nextOutage.isEmergency ? html`
+          <!-- Emergency schedule status from Yasno v3 status sensor -->
+          ${!outageStatus.isActive && scheduleStatus.isEmergency ? html`
             <div class="outage-compact outage-emergency">
               <div class="outage-compact-header">
                 <span class="outage-icon">⚠️</span>
@@ -608,7 +655,7 @@ class SmartBatteryCard extends LitBase {
           ` : ''}
           
           <!-- Next Outage Info (show only if no active outage and not emergency) -->
-          ${!outageStatus.isActive && !nextOutage.isEmergency && nextOutage.startTime ? html`
+          ${!outageStatus.isActive && !scheduleStatus.isEmergency && nextOutage.startTime ? html`
             <div class="outage-compact outage-next">
               <div class="outage-compact-header">
                 <span class="outage-icon">📅</span>
@@ -622,7 +669,19 @@ class SmartBatteryCard extends LitBase {
               </div>
             </div>
           ` : ''}
-        </div>
+
+          ${outageDataUnavailable && !scheduleStatus.isEmergency ? html`
+            <div class="outage-compact outage-unavailable">
+              <div class="outage-compact-header">
+                <span class="outage-icon">⚠️</span>
+                <span class="outage-label">Outage data unavailable</span>
+              </div>
+              <div class="outage-compact-info">
+                <span class="compact-value-lg">Check the configured entity IDs in Home Assistant.</span>
+              </div>
+            </div>
+          ` : ''}
+        </div>` : ''}
       </ha-card>
     `;
   }
@@ -632,16 +691,33 @@ class SmartBatteryCard extends LitBase {
       /* Vertical battery layout */
       ha-card.eco-card-vertical { padding: 16px; }
       .batteries-container {
-        display: -webkit-box;
-        display: -webkit-flex;
-        display: flex;
-        -webkit-flex-wrap: wrap;
-        flex-wrap: wrap;
-        -webkit-box-pack: center;
-        -webkit-justify-content: center;
-        justify-content: center;
-        gap: 28px;
+        --battery-size: 140px;
+        --status-size: 50px;
+        --pct-top: 70px;
+        --time-top: 120px;
+        --pct-font-size: 38px;
+        --time-font-size: 20px;
+        display: grid;
+        grid-template-columns: repeat(var(--battery-columns, 1), minmax(0, 1fr));
+        align-items: start;
+        gap: clamp(8px, 3vw, 28px);
         margin-bottom: 12px;
+      }
+      .batteries-container[data-density="compact"] {
+        --battery-size: 112px;
+        --status-size: 42px;
+        --pct-top: 62px;
+        --time-top: 104px;
+        --pct-font-size: 28px;
+        --time-font-size: 15px;
+      }
+      .batteries-container[data-density="dense"] {
+        --battery-size: 96px;
+        --status-size: 38px;
+        --pct-top: 57px;
+        --time-top: 92px;
+        --pct-font-size: 24px;
+        --time-font-size: 13px;
       }
       .battery-column {
         display: -webkit-box;
@@ -655,10 +731,11 @@ class SmartBatteryCard extends LitBase {
         -webkit-align-items: center;
         align-items: center;
         gap: 8px;
+        min-width: 0;
       }
       .battery-container {
         position: relative;
-        width: 156px;
+        width: min(100%, calc(var(--battery-size) + 12px));
         margin: 0 auto;
         padding-top: 30px;
       }
@@ -666,8 +743,8 @@ class SmartBatteryCard extends LitBase {
         margin: 0 auto;
         overflow: hidden;
         position: relative;
-        width: 140px;
-        height: 140px;
+        width: var(--battery-size);
+        height: var(--battery-size);
         border-radius: 50%;
         border: 2px solid rgba(255, 255, 255, 0.3);
         background: rgba(50, 50, 50, 0.3);
@@ -696,28 +773,31 @@ class SmartBatteryCard extends LitBase {
         font-weight: 600;
         color: var(--primary-text-color);
         white-space: nowrap;
+        max-width: 100%;
+        overflow: hidden;
+        text-overflow: ellipsis;
         pointer-events: none;
       }
       .pct-circle-text {
         position: absolute;
-        top: 70px;
+        top: var(--pct-top);
         left: 50%;
         transform: translateX(-50%);
         color: white;
         font-weight: 700;
-        font-size: clamp(24px, 7vw, 38px);
+        font-size: var(--pct-font-size);
         text-shadow: 0 0 6px rgba(0,0,0,0.95), 0 0 10px rgba(0,0,0,0.8), 0 0 3px rgba(0,0,0,1);
         filter: drop-shadow(0 0 4px rgba(255,255,255,0.5));
         pointer-events: none;
       }
       .time-circle-text {
         position: absolute;
-        top: 120px;
+        top: var(--time-top);
         left: 50%;
         transform: translateX(-50%);
         color: white;
         font-weight: 600;
-        font-size: clamp(14px, 4vw, 20px);
+        font-size: var(--time-font-size);
         text-shadow: 0 0 6px rgba(0,0,0,0.95), 0 0 10px rgba(0,0,0,0.8), 0 0 3px rgba(0,0,0,1);
         filter: drop-shadow(0 0 3px rgba(255,255,255,0.4));
         pointer-events: none;
@@ -725,7 +805,7 @@ class SmartBatteryCard extends LitBase {
       }
       .status-indicator-wrapper {
         position: relative;
-        height: 50px;
+        height: var(--status-size);
         display: -webkit-box;
         display: -webkit-flex;
         display: flex;
@@ -739,8 +819,8 @@ class SmartBatteryCard extends LitBase {
       }
       .status-svg {
         display: block;
-        width: 50px;
-        height: 50px;
+        width: var(--status-size);
+        height: var(--status-size);
         filter: drop-shadow(0 0 4px rgba(0,0,0,0.3));
       }
       .battery-power-below {
@@ -771,10 +851,23 @@ class SmartBatteryCard extends LitBase {
       
       @media (max-width: 400px) {
         .batteries-container {
-          gap: 12px;
+          gap: 6px;
         }
-        .battery-svg {
-          max-width: 120px;
+        .batteries-container[data-density="compact"] {
+          --battery-size: 82px;
+          --status-size: 34px;
+          --pct-top: 52px;
+          --time-top: 82px;
+          --pct-font-size: 21px;
+          --time-font-size: 12px;
+        }
+        .batteries-container[data-density="dense"] {
+          --battery-size: 64px;
+          --status-size: 30px;
+          --pct-top: 48px;
+          --time-top: 70px;
+          --pct-font-size: 18px;
+          --time-font-size: 10px;
         }
       }
       .battery-time, .battery-power {
@@ -1014,6 +1107,9 @@ class SmartBatteryCard extends LitBase {
         border-color: var(--warning-color, #fbc02d);
         background: rgba(251, 192, 45, 0.1);
       }
+      .outage-compact.outage-unavailable {
+        border-color: var(--warning-color, #fbc02d);
+      }
       .outage-compact-header {
         display: -webkit-box;
         display: -webkit-flex;
@@ -1107,4 +1203,4 @@ if (!customElements.get('smart-battery-card')) {
   customElements.define('smart-battery-card', SmartBatteryCard);
 }
 
-console.info('%c SMART-BATTERY-CARD %c v0.4.0 ', 'background:#0b8043;color:white;border-radius:3px 0 0 3px;padding:2px 4px', 'background:#263238;color:#fff;border-radius:0 3px 3px 0;padding:2px 4px');
+console.info('%c SMART-BATTERY-CARD %c v0.5.0 ', 'background:#0b8043;color:white;border-radius:3px 0 0 3px;padding:2px 4px', 'background:#263238;color:#fff;border-radius:0 3px 3px 0;padding:2px 4px');

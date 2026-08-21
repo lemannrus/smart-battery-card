@@ -4,7 +4,8 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Smart Battery Card Test - v0.4.0 (Rebranding)</title>
+  <link rel="icon" href="data:,">
+  <title>Smart Battery Card Test - v0.5.0</title>
   <style>
     :root {
       --primary-text-color: #e1e1e1;
@@ -82,17 +83,16 @@
 
 <body>
   <h1>🔋 Smart Battery Card Test Page</h1>
-  <div class="subtitle">Version 0.4.0 - Rebranding & Universal Battery Support 🎉
+  <div class="subtitle">Version 0.5.0 - Compact Multi-Battery Layout & Yasno v3
   </div>
 
   <div
     style="text-align: center; margin: 20px auto; padding: 15px; background: rgba(67, 160, 71, 0.1); border-radius: 8px; max-width: 800px; border: 1px solid rgba(67, 160, 71, 0.3);">
-    <div style="font-size: 13px; color: var(--secondary-text-color); margin-bottom: 8px;">✨ What's New in v0.4.0</div>
+    <div style="font-size: 13px; color: var(--secondary-text-color); margin-bottom: 8px;">✨ What's New in v0.5.0</div>
     <div style="font-size: 12px; color: var(--primary-text-color); line-height: 1.6;">
-      • <strong>Renamed to Smart Battery Card</strong>: Universal battery support (EcoFlow, Jackery, Tesla, etc.)<br>
-      • ⚠️ <strong>Breaking change</strong>: Update config to <code>type: custom:smart-battery-card</code><br>
-      • More generic branding reflects multi-platform compatibility<br>
-      • Works with any battery sensor in Home Assistant
+      • Three and four batteries stay in one compact responsive row<br>
+      • HA Yasno Outages v3 status and <code>event_end</code> support<br>
+      • Clear unavailable-data warnings without false emergency states
     </div>
   </div>
 
@@ -131,7 +131,7 @@
     }
 
     // Create mock HASS object factory
-    window.createMockHass = (batteryLevel, dischargeTime = null, chargeTime = null, acOutPower = null, outageActive = false, outageEndMinutes = 120, nextOutageMinutes = 240) => ({
+    window.createMockHass = (batteryLevel, dischargeTime = null, chargeTime = null, acOutPower = null, outageActive = false, outageEndMinutes = 120, nextOutageMinutes = 240, scheduleStatus = 'schedule_applies') => ({
       states: {
         'sensor.ecoflow_battery': {
           state: String(batteryLevel),
@@ -218,9 +218,10 @@
           attributes: {}
         },
         'sensor.outage_status': {
-          state: outageActive ? 'outage' : 'connected',
+          state: outageActive ? 'outage' : 'normal',
           attributes: {
-            friendly_name: 'Outage Status'
+            friendly_name: 'Outage Status',
+            event_end: outageActive ? new Date(Date.now() + outageEndMinutes * 60000).toISOString() : null
           }
         },
         'sensor.outage_end': outageActive ? {
@@ -232,14 +233,20 @@
           state: 'unavailable',
           attributes: {}
         },
-        'sensor.next_outage': !outageActive ? {
+        'sensor.next_outage': !outageActive && nextOutageMinutes !== null ? {
           state: new Date(Date.now() + nextOutageMinutes * 60000).toISOString(),
           attributes: {
             friendly_name: 'Next Outage Time'
           }
         } : {
-          state: 'unavailable',
+          state: outageActive ? 'unavailable' : 'unknown',
           attributes: {}
+        },
+        'sensor.outage_schedule_status': {
+          state: scheduleStatus,
+          attributes: {
+            friendly_name: 'Outage Schedule Status'
+          }
         }
       }
     });
@@ -270,9 +277,9 @@
       await loadCardScript();
 
       // Wait for the custom element to be defined
-      await customElements.whenDefined('eco-battery-card');
+      await customElements.whenDefined('smart-battery-card');
 
-      console.log('✓ eco-battery-card registered');
+      console.log('✓ smart-battery-card registered');
 
       // Single Battery Tests
       const dischargeConfigs = [
@@ -571,6 +578,19 @@
             gap: 2
           },
           hass: createMockHass(63, 90, 0, 2500)
+        },
+        {
+          label: 'Yasno v3 - Emergency Schedule Status',
+          config: {
+            batteries: [{
+              entity: 'sensor.ecoflow_battery',
+              name: 'Delta 2'
+            }],
+            outage_status_entity: 'sensor.outage_status',
+            next_outage_time_entity: 'sensor.next_outage',
+            outage_schedule_status_entity: 'sensor.outage_schedule_status'
+          },
+          hass: createMockHass(67, null, null, null, false, 120, null, 'emergency_shutdowns')
         }
       ];
 
@@ -682,8 +702,8 @@
             ],
             selected_battery: 1, // Use River 2 for outage analysis
             outage_status_entity: 'sensor.outage_status',
-            outage_end_time_entity: 'sensor.outage_end',
             next_outage_time_entity: 'sensor.next_outage',
+            outage_schedule_status_entity: 'sensor.outage_schedule_status',
             palette: 'threshold',
             segments: 5,
             gap: 2

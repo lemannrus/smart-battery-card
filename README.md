@@ -32,12 +32,13 @@ A custom Lovelace card for Home Assistant that displays battery levels with beau
 
 ## ✨ Features
 
-### Multi-Battery Support (NEW in v0.3.0) 🔋🔋
+### Multi-Battery Support 🔋🔋🔋
 - **Multiple Batteries Display**: Show all your battery devices in one card
-  - Dynamic vertical layout that automatically adjusts to the number of batteries
+  - Compact responsive grid keeps up to four batteries in one row
   - Single battery: centered display
   - Two batteries: left and right layout
-  - Three or more: distributed grid layout
+  - Three batteries: compact row on desktop and mobile dashboards
+  - Five or more: additional grid rows
 - **Individual Battery Monitoring**: Each battery shows its own:
   - Name and percentage
   - Remaining time (discharge or charge)
@@ -77,7 +78,7 @@ A custom Lovelace card for Home Assistant that displays battery levels with beau
   - Next outage start time
   - Time until next outage
   - Required charging time calculation
-- **Compatible with [HA Yasno Outages](https://github.com/denysdovhan/ha-yasno-outages)**: Perfect for Ukrainian users
+- **Compatible with [HA Yasno Outages v3](https://github.com/denysdovhan/ha-yasno-outages)**: Perfect for Ukrainian users
   - Automatic integration with DTEK/Yasno outage schedules
   - No manual schedule configuration needed
   - Real-time outage status updates
@@ -154,10 +155,10 @@ batteries:
     charge_remaining_time_entity: sensor.delta_2_charge_remaining_time
     ac_out_power_entity: sensor.delta_2_ac_out_power
 
-# Outage integration entities
-outage_status_entity: sensor.yasno_kiiv_dtek_2_2_electricity
-outage_end_time_entity: sensor.yasno_kiiv_dtek_2_2_next_connectivity
-next_outage_time_entity: sensor.yasno_kiiv_dtek_2_2_next_planned_outage
+# Yasno v3 entities — copy the exact IDs from Developer Tools → States
+outage_status_entity: sensor.yasno_your_entry_electricity
+next_outage_time_entity: sensor.yasno_your_entry_next_planned_outage
+outage_schedule_status_entity: sensor.yasno_your_entry_status_today
 
 # Display settings
 green: 60
@@ -166,7 +167,7 @@ precision: 0
 palette: gradient
 ```
 
-### Multi-Battery Configuration (NEW in v0.3.0) 🔋🔋
+### Multi-Battery Configuration 🔋🔋🔋
 
 ```yaml
 type: custom:smart-battery-card
@@ -181,14 +182,19 @@ batteries:
     remaining_time_entity: sensor.river_2_discharge_remaining_time
     charge_remaining_time_entity: sensor.river_2_charge_remaining_time
     ac_out_power_entity: sensor.river_2_ac_out_power
+  - entity: sensor.delta_pro_battery_level
+    name: Delta Pro
+    remaining_time_entity: sensor.delta_pro_discharge_remaining_time
+    charge_remaining_time_entity: sensor.delta_pro_charge_remaining_time
+    ac_out_power_entity: sensor.delta_pro_ac_out_power
 
 # Which battery to use for outage analysis (0 = first battery, 1 = second, etc.)
 selected_battery: 0
 
 # Outage integration entities (shared for all batteries)
-outage_status_entity: sensor.yasno_kiiv_dtek_2_2_electricity
-outage_end_time_entity: sensor.yasno_kiiv_dtek_2_2_next_connectivity
-next_outage_time_entity: sensor.yasno_kiiv_dtek_2_2_next_planned_outage
+outage_status_entity: sensor.yasno_your_entry_electricity
+next_outage_time_entity: sensor.yasno_your_entry_next_planned_outage
+outage_schedule_status_entity: sensor.yasno_your_entry_status_today
 
 # Display settings (applied to all batteries)
 green: 60
@@ -197,7 +203,7 @@ precision: 0
 palette: gradient
 ```
 
-**Note:** These examples use the [**HA Yasno Outages**](https://github.com/denysdovhan/ha-yasno-outages) integration for Ukrainian electricity outage information. Entity names will vary based on your city and DTEK group. Install it via HACS for automatic outage schedule tracking.
+**Note:** These examples use [**HA Yasno Outages v3**](https://github.com/denysdovhan/ha-yasno-outages). The integration now supports address-based setup, so entity IDs can differ from the old `yasno_kiiv_dtek_2_2_*` examples. Always copy the IDs from Home Assistant Developer Tools → States. If an older entry stopped updating after a street or house ID changed, reconfigure or recreate that integration entry first.
 
 ## ⚙️ Configuration Options
 
@@ -229,11 +235,13 @@ Each battery in the `batteries` array can have these properties:
 
 | Option | Type | Default | Description |
 |--------|------|---------|-------------|
-| `outage_status_entity` | string | `null` | Entity ID for current outage status. Supports states: `on`/`off`, `true`/`false`, `active`/`inactive`, `outage`/`connected`, `1`/`0` |
-| `outage_end_time_entity` | string | `null` | Entity ID for outage end time. Supports ISO datetime format or Unix timestamp |
+| `outage_status_entity` | string | `null` | Entity ID for current outage status. Supports Yasno v3 `outage`/`normal` plus `on`/`off`, `true`/`false`, `active`/`inactive`, `outage`/`connected`, `1`/`0` |
+| `outage_end_time_entity` | string | `null` | Optional fallback entity for outage end time. Yasno v3 users can omit it because the card reads `event_end` from the electricity sensor |
 | `next_outage_time_entity` | string | `null` | Entity ID for next scheduled outage start time. Supports ISO datetime format or Unix timestamp |
+| `outage_schedule_status_entity` | string | `null` | Optional Yasno v3 `status_today` sensor. Used to distinguish `emergency_shutdowns` and `no_outages` from missing data |
 
 **Version Notes:** 
+- **v0.5.0**: Compact 3–4 battery rows and HA Yasno Outages v3 compatibility
 - **v0.3.4**: Circular battery design with animated wave effect on liquid fill
 - **v0.3.3**: Circular batteries + rounded square status indicators  
 - **v0.3.2**: Responsive design with auto-scaling elements
@@ -279,9 +287,9 @@ batteries:
     remaining_time_entity: sensor.delta_2_discharge_remaining_time
     charge_remaining_time_entity: sensor.delta_2_charge_remaining_time
     ac_out_power_entity: sensor.delta_2_ac_out_power
-outage_status_entity: sensor.yasno_kiiv_dtek_2_2_electricity
-outage_end_time_entity: sensor.yasno_kiiv_dtek_2_2_next_connectivity
-next_outage_time_entity: sensor.yasno_kiiv_dtek_2_2_next_planned_outage
+outage_status_entity: sensor.yasno_your_entry_electricity
+next_outage_time_entity: sensor.yasno_your_entry_next_planned_outage
+outage_schedule_status_entity: sensor.yasno_your_entry_status_today
 green: 60
 yellow: 25
 palette: gradient
@@ -321,11 +329,13 @@ The outage integration helps you manage scheduled power outages (rolling blackou
 1. **Monitoring** current outages and battery sufficiency
 2. **Predicting** if you can charge before the next outage
 3. **Alerting** you when action is needed
-4. **Displaying** your outage schedule
+4. **Displaying** the current and next outage in the battery card
+
+For the full day/week graph, add the calendar entity provided by Yasno Outages to a Home Assistant Calendar card. Smart Battery Card intentionally consumes sensor states; it does not replace a calendar/schedule card.
 
 ### Compatible Integrations
 
-#### ⚡️ HA Yasno Outages (Recommended for Ukraine)
+#### ⚡️ HA Yasno Outages v3 (Recommended for Ukraine)
 
 For users in Ukraine affected by electricity outages, we recommend the [**HA Yasno Outages**](https://github.com/denysdovhan/ha-yasno-outages) integration by [@denysdovhan](https://github.com/denysdovhan).
 
@@ -337,16 +347,18 @@ For users in Ukraine affected by electricity outages, we recommend the [**HA Yas
 - 📊 Calendar view of planned outages
 
 **Installation:**
-1. Install via HACS (search for "Yasno Outages")
-2. Configure your city and DTEK group
-3. Use the provided sensors in your card configuration
+1. Install or update Yasno Outages via HACS.
+2. Configure the current address/provider/group entry in the Home Assistant UI.
+3. In Developer Tools → States, find the entry's `electricity`, `next_planned_outage`, and `status_today` sensors.
+4. Copy those exact entity IDs into the card configuration.
 
 **Sensor mapping for this card:**
-- `sensor.yasno_*_electricity` → `outage_status_entity`
-- `sensor.yasno_*_next_connectivity` → `outage_end_time_entity`
-- `sensor.yasno_*_next_planned_outage` → `next_outage_time_entity`
+- `sensor.*_electricity` → `outage_status_entity`
+- `sensor.*_next_planned_outage` → `next_outage_time_entity`
+- `sensor.*_status_today` → `outage_schedule_status_entity`
+- `sensor.*_next_connectivity` → optional `outage_end_time_entity` fallback
 
-*Replace `*` with your specific city and group (e.g., `kiiv_dtek_2_2`)*
+The card reads the active outage end from the electricity sensor's `event_end` attribute, which is the current Yasno v3 contract. The separate `next_connectivity` mapping remains supported for older setups.
 
 ---
 
@@ -422,13 +434,13 @@ batteries:
     charge_remaining_time_entity: sensor.delta_2_charge_remaining_time
     ac_out_power_entity: sensor.delta_2_ac_out_power
 
-# Yasno/DTEK sensors (replace with your city/group)
-outage_status_entity: sensor.yasno_kiiv_dtek_2_2_electricity
-outage_end_time_entity: sensor.yasno_kiiv_dtek_2_2_next_connectivity
-next_outage_time_entity: sensor.yasno_kiiv_dtek_2_2_next_planned_outage
+# Yasno v3 sensors (replace with the exact IDs from your HA instance)
+outage_status_entity: sensor.yasno_your_entry_electricity
+next_outage_time_entity: sensor.yasno_your_entry_next_planned_outage
+outage_schedule_status_entity: sensor.yasno_your_entry_status_today
 ```
 
-**Installation:** Install [HA Yasno Outages](https://github.com/denysdovhan/ha-yasno-outages) via HACS. After setup, it provides sensors for electricity status, connectivity times, and planned outages. Entity names vary by city and DTEK group (e.g., `yasno_kiiv_dtek_2_2` for Kyiv, Group 2.2).
+**Installation:** Install [HA Yasno Outages](https://github.com/denysdovhan/ha-yasno-outages) via HACS. Version 3 uses address-aware setup and may require an entry to be reconfigured or recreated when Yasno changes street/house IDs. Entity names are not a stable API, so verify them in Developer Tools after migration.
 
 ### Full Card Configuration with Outage Features
 
@@ -546,7 +558,7 @@ The card uses your EcoFlow's `charge_remaining_time_entity` sensor for accurate 
   - Ensure `charge_remaining_time_entity` is configured for charging analysis
   - Ensure `remaining_time_entity` is configured for discharge analysis
   - Check that time sensors report values in minutes (not seconds/hours)
-  - Verify outage status sensor returns 'on'/'off' or similar states
+  - Verify the outage status sensor returns Yasno v3 `normal`/`outage` or another supported state pair
   - Use Developer Tools → States to verify all sensor states
 
 ## 🤝 Contributing

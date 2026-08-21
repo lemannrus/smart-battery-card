@@ -22,10 +22,10 @@ batteries:
     charge_remaining_time_entity: sensor.delta_2_charge_remaining_time
     ac_out_power_entity: sensor.delta_2_ac_out_power
 
-# Outage Integration (using Yasno Integration)
-outage_status_entity: sensor.yasno_kiiv_dtek_2_2_electricity
-outage_end_time_entity: sensor.yasno_kiiv_dtek_2_2_next_connectivity
-next_outage_time_entity: sensor.yasno_kiiv_dtek_2_2_next_planned_outage
+# Outage Integration (Yasno v3; copy exact IDs from Developer Tools → States)
+outage_status_entity: sensor.yasno_your_entry_electricity
+next_outage_time_entity: sensor.yasno_your_entry_next_planned_outage
+outage_schedule_status_entity: sensor.yasno_your_entry_status_today
 
 # Display Settings
 green: 60
@@ -67,9 +67,9 @@ batteries:
 selected_battery: 0
 
 # Outage Integration (shared for all batteries)
-outage_status_entity: sensor.yasno_kiiv_dtek_2_2_electricity
-outage_end_time_entity: sensor.yasno_kiiv_dtek_2_2_next_connectivity
-next_outage_time_entity: sensor.yasno_kiiv_dtek_2_2_next_planned_outage
+outage_status_entity: sensor.yasno_your_entry_electricity
+next_outage_time_entity: sensor.yasno_your_entry_next_planned_outage
+outage_schedule_status_entity: sensor.yasno_your_entry_status_today
 
 # Display Settings (applied to all batteries)
 green: 60
@@ -131,7 +131,7 @@ palette: threshold
 # 2. Dynamic Layout
 #    - 1 battery: Centered
 #    - 2 batteries: Left and right
-#    - 3+ batteries: Distributed grid
+#    - 3-4 batteries: Compact row; 5+ batteries use additional grid rows
 
 # 3. Individual Monitoring
 #    - Each battery shows its own percentage, time, and power
@@ -161,17 +161,19 @@ palette: threshold
 # 1. Open HACS → Integrations
 # 2. Search for "Yasno Outages"
 # 3. Install and restart Home Assistant
-# 4. Add integration and select your city and group
+# 4. Add the integration and configure your current address/provider/group
+# 5. Copy the exact entity IDs from Developer Tools → States
 
 # Entity Mapping:
-# - outage_status_entity: sensor.yasno_{city}_dtek_{group}_electricity
-# - outage_end_time_entity: sensor.yasno_{city}_dtek_{group}_next_connectivity
-# - next_outage_time_entity: sensor.yasno_{city}_dtek_{group}_next_planned_outage
+# - outage_status_entity: sensor.{your_entry}_electricity
+# - next_outage_time_entity: sensor.{your_entry}_next_planned_outage
+# - outage_schedule_status_entity: sensor.{your_entry}_status_today
+# - outage_end_time_entity: optional legacy fallback to next_connectivity
 
-# Example for Kyiv, Group 2.2:
-#   outage_status_entity: sensor.yasno_kiiv_dtek_2_2_electricity
-#   outage_end_time_entity: sensor.yasno_kiiv_dtek_2_2_next_connectivity
-#   next_outage_time_entity: sensor.yasno_kiiv_dtek_2_2_next_planned_outage
+# Example placeholders (use the exact IDs shown in your HA instance):
+#   outage_status_entity: sensor.yasno_your_entry_electricity
+#   next_outage_time_entity: sensor.yasno_your_entry_next_planned_outage
+#   outage_schedule_status_entity: sensor.yasno_your_entry_status_today
 
 # GitHub: https://github.com/denysdovhan/ha-yasno-outages
 
@@ -294,7 +296,7 @@ palette: threshold
 #   → Check browser console for errors (F12)
 
 # Multi-battery layout looks wrong
-#   → The layout auto-adjusts: 1 centered, 2 left/right, 3+ grid
+#   → The layout auto-adjusts: 1 centered, 2 left/right, 3-4 compact row, 5+ grid
 #   → Try refreshing the page or reloading the card
 
 ---
