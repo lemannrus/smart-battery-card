@@ -1,7 +1,7 @@
 /*
  * Smart Battery Card for Home Assistant (no build step, HACS-friendly)
  * Author: Alex Hryhor
- * Version: 0.4.0
+ * Version: 0.5.1
 *
 * Config example:
 * type: custom:smart-battery-card
@@ -702,14 +702,25 @@ class SmartBatteryCard extends LitBase {
         align-items: start;
         gap: clamp(8px, 3vw, 28px);
         margin-bottom: 12px;
+        container-type: inline-size;
+      }
+      .batteries-container[data-count="3"] {
+        grid-template-columns: repeat(3, minmax(0, 1fr));
       }
       .batteries-container[data-density="compact"] {
-        --battery-size: 112px;
-        --status-size: 42px;
-        --pct-top: 62px;
-        --time-top: 104px;
-        --pct-font-size: 28px;
-        --time-font-size: 15px;
+        --battery-size: 96px;
+        --status-size: 36px;
+        --pct-top: 55px;
+        --time-top: 88px;
+        --pct-font-size: 24px;
+        --time-font-size: 13px;
+        --battery-size: clamp(72px, 29cqw, 108px);
+        --status-size: clamp(30px, 10cqw, 40px);
+        --pct-top: clamp(48px, 16cqw, 60px);
+        --time-top: clamp(75px, 27cqw, 98px);
+        --pct-font-size: clamp(20px, 8cqw, 27px);
+        --time-font-size: clamp(11px, 4cqw, 14px);
+        gap: clamp(4px, 2cqw, 10px);
       }
       .batteries-container[data-density="dense"] {
         --battery-size: 96px;
@@ -743,8 +754,10 @@ class SmartBatteryCard extends LitBase {
         margin: 0 auto;
         overflow: hidden;
         position: relative;
-        width: var(--battery-size);
-        height: var(--battery-size);
+        width: min(100%, var(--battery-size));
+        height: auto;
+        aspect-ratio: 1;
+        box-sizing: border-box;
         border-radius: 50%;
         border: 2px solid rgba(255, 255, 255, 0.3);
         background: rgba(50, 50, 50, 0.3);
@@ -842,7 +855,10 @@ class SmartBatteryCard extends LitBase {
       /* Responsive adjustments for smaller screens */
       @media (max-width: 600px) {
         .batteries-container {
-          gap: 16px;
+          gap: 8px;
+        }
+        .batteries-container[data-density="compact"] {
+          gap: 4px;
         }
         ha-card.eco-card-vertical {
           padding: 12px;
@@ -1203,4 +1219,4 @@ if (!customElements.get('smart-battery-card')) {
   customElements.define('smart-battery-card', SmartBatteryCard);
 }
 
-console.info('%c SMART-BATTERY-CARD %c v0.5.0 ', 'background:#0b8043;color:white;border-radius:3px 0 0 3px;padding:2px 4px', 'background:#263238;color:#fff;border-radius:0 3px 3px 0;padding:2px 4px');
+console.info('%c SMART-BATTERY-CARD %c v0.5.1 ', 'background:#0b8043;color:white;border-radius:3px 0 0 3px;padding:2px 4px', 'background:#263238;color:#fff;border-radius:0 3px 3px 0;padding:2px 4px');

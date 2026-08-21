@@ -243,6 +243,7 @@ Each battery in the `batteries` array can have these properties:
 | `outage_schedule_status_entity` | string | `null` | Optional Yasno v3 `status_today` sensor. Used to distinguish `emergency_shutdowns` and `no_outages` from missing data |
 
 **Version Notes:** 
+- **v0.5.1**: Proportional three-battery scaling for narrow tablet dashboard columns
 - **v0.5.0**: Compact 3–4 battery rows and HA Yasno Outages v3 compatibility
 - **v0.3.4**: Circular battery design with animated wave effect on liquid fill
 - **v0.3.3**: Circular batteries + rounded square status indicators  

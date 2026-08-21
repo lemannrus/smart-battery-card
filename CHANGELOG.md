@@ -5,6 +5,15 @@ All notable changes to the Smart Battery Card will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.5.1] - 2026-08-21
+
+### Fixed
+
+- Scale three-battery circles, labels, time, and status indicators with the available card width
+- Keep three batteries in one explicit row on narrow tablet dashboard columns
+- Reduce compact tablet gaps and prevent horizontal overflow
+- Add fixed-size fallbacks for WebViews without container query unit support
+
 ## [0.5.0] - 2026-08-21
 
 ### Added
