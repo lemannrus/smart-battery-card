@@ -205,6 +205,8 @@ palette: gradient
 
 **Note:** These examples use [**HA Yasno Outages v3**](https://github.com/denysdovhan/ha-yasno-outages). The integration now supports address-based setup, so entity IDs can differ from the old `yasno_kiiv_dtek_2_2_*` examples. Always copy the IDs from Home Assistant Developer Tools → States. If an older entry stopped updating after a street or house ID changed, reconfigure or recreate that integration entry first.
 
+For EcoFlow sensor data, install the [EcoFlow Cloud integration](https://github.com/tolwi/hassio-ecoflow-cloud) or configure another Home Assistant integration that exposes equivalent battery entities.
+
 ## ⚙️ Configuration Options
 
 ### Card-Level Options
