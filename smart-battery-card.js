@@ -1,7 +1,7 @@
 /*
  * Smart Battery Card for Home Assistant (no build step, HACS-friendly)
  * Author: Alex Hryhor
- * Version: 0.5.1
+ * Version: 0.5.2
 *
 * Config example:
 * type: custom:smart-battery-card
@@ -71,6 +71,7 @@ class SmartBatteryCard extends LitBase {
         remaining_time_entity: battery.remaining_time_entity || null,
         charge_remaining_time_entity: battery.charge_remaining_time_entity || null,
         ac_out_power_entity: battery.ac_out_power_entity || null,
+        ac_out_power_invert: !!battery.ac_out_power_invert,
         invert: !!battery.invert,
       })),
       selected_battery: typeof config.selected_battery === 'number' ? Math.max(0, Math.min(config.selected_battery, config.batteries.length - 1)) : 0,
@@ -214,8 +215,13 @@ class SmartBatteryCard extends LitBase {
     const value = st.state;
     if (!value || value === 'unknown' || value === 'unavailable') return null;
 
-    const power = Number(value);
-    if (!Number.isFinite(power) || power < 0) return null;
+    let power = Number(value);
+    if (!Number.isFinite(power)) return null;
+
+    // Some integrations expose export as a negative signed value. Invert only
+    // when explicitly configured so import is not mistaken for battery output.
+    if (battery.ac_out_power_invert) power *= -1;
+    if (power < 0) return null;
 
     return power;
   }
@@ -1219,4 +1225,4 @@ if (!customElements.get('smart-battery-card')) {
   customElements.define('smart-battery-card', SmartBatteryCard);
 }
 
-console.info('%c SMART-BATTERY-CARD %c v0.5.1 ', 'background:#0b8043;color:white;border-radius:3px 0 0 3px;padding:2px 4px', 'background:#263238;color:#fff;border-radius:0 3px 3px 0;padding:2px 4px');
+console.info('%c SMART-BATTERY-CARD %c v0.5.2 ', 'background:#0b8043;color:white;border-radius:3px 0 0 3px;padding:2px 4px', 'background:#263238;color:#fff;border-radius:0 3px 3px 0;padding:2px 4px');

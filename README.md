@@ -187,6 +187,12 @@ batteries:
     remaining_time_entity: sensor.delta_pro_discharge_remaining_time
     charge_remaining_time_entity: sensor.delta_pro_charge_remaining_time
     ac_out_power_entity: sensor.delta_pro_ac_out_power
+  - entity: sensor.stream_pro_power_battery_2
+    name: Stream Pro
+    remaining_time_entity: sensor.stream_pro_remaining_time
+    charge_remaining_time_entity: sensor.stream_pro_remaining_time
+    ac_out_power_entity: sensor.stream_pro_power_ac
+    ac_out_power_invert: true # Stream reports battery export as a negative value
 
 # Which battery to use for outage analysis (0 = first battery, 1 = second, etc.)
 selected_battery: 0
@@ -231,6 +237,7 @@ Each battery in the `batteries` array can have these properties:
 | `remaining_time_entity` | string | `null` | Optional entity ID for discharge remaining time (in minutes) |
 | `charge_remaining_time_entity` | string | `null` | Optional entity ID for charge remaining time (in minutes) |
 | `ac_out_power_entity` | string | `null` | Optional entity ID for AC output power (in watts) |
+| `ac_out_power_invert` | boolean | `false` | Invert the AC power sign before display. Use for signed sensors where battery export is negative; power in the opposite direction stays hidden |
 | `invert` | boolean | `false` | Invert the battery reading (for sensors that report inversely) |
 
 ### Outage Integration Options
@@ -243,6 +250,7 @@ Each battery in the `batteries` array can have these properties:
 | `outage_schedule_status_entity` | string | `null` | Optional Yasno v3 `status_today` sensor. Used to distinguish `emergency_shutdowns` and `no_outages` from missing data |
 
 **Version Notes:** 
+- **v0.5.2**: Optional sign inversion for AC output sensors such as EcoFlow Stream Pro `Power AC`
 - **v0.5.1**: Proportional three-battery scaling for narrow tablet dashboard columns
 - **v0.5.0**: Compact 3–4 battery rows and HA Yasno Outages v3 compatibility
 - **v0.3.4**: Circular battery design with animated wave effect on liquid fill

@@ -1,4 +1,4 @@
-# Example Configuration for Eco Battery Card v0.3.0
+# Example Configuration for Smart Battery Card v0.5.2
 # With Multi-Battery Support and Outage Integration
 
 # ============================================
@@ -63,6 +63,14 @@ batteries:
     charge_remaining_time_entity: sensor.delta_pro_charge_remaining_time
     ac_out_power_entity: sensor.delta_pro_ac_out_power
 
+  # Battery 4: EcoFlow Stream Pro (signed AC power)
+  - entity: sensor.stream_pro_power_battery_2
+    name: Stream Pro
+    remaining_time_entity: sensor.stream_pro_remaining_time
+    charge_remaining_time_entity: sensor.stream_pro_remaining_time
+    ac_out_power_entity: sensor.stream_pro_power_ac
+    ac_out_power_invert: true
+
 # Which battery to use for outage analysis (0 = first, 1 = second, etc.)
 selected_battery: 0
 
@@ -92,6 +100,7 @@ palette: threshold
 #   - remaining_time_entity: (Optional) Discharge time in minutes
 #   - charge_remaining_time_entity: (Optional) Charge time in minutes
 #   - ac_out_power_entity: (Optional) AC output power in watts
+#   - ac_out_power_invert: (Optional) Set true when battery export is negative
 #   - invert: (Optional) Invert battery reading if needed
 
 # SELECTED_BATTERY (Optional, default: 0):
