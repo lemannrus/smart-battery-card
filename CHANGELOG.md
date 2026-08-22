@@ -5,6 +5,19 @@ All notable changes to the Smart Battery Card will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.6.0] - 2026-08-22
+
+### Added
+
+- Add `outage_forecast_mode: all` with a per-battery runtime and outage-margin breakdown
+- Add approximate runtime fallback using normalized remaining energy, current output power, and configurable efficiency
+- Add per-battery inclusion control for outage forecasts
+
+### Changed
+
+- Keep legacy `selected_battery` analysis as the default for backward compatibility
+- Represent missing runtime data explicitly instead of treating it as an empty battery
+
 ## [0.5.2] - 2026-08-22
 
 ### Added

@@ -1,7 +1,7 @@
 /*
  * Smart Battery Card for Home Assistant (no build step, HACS-friendly)
  * Author: Alex Hryhor
- * Version: 0.5.2
+ * Version: 0.6.0
 *
 * Config example:
 * type: custom:smart-battery-card
@@ -17,7 +17,8 @@
 *     charge_remaining_time_entity: sensor.river_2_charge_remaining_time
 *     ac_out_power_entity: sensor.river_2_ac_out_power
 * 
-* selected_battery: 0  # Index of battery for outage analysis (0 = first battery)
+* outage_forecast_mode: all  # Analyze every included battery during an active outage
+* selected_battery: 0        # Legacy single-battery analysis / next-outage charging analysis
 * 
 * # Outage settings (shared across all batteries)
 * outage_status_entity: sensor.outage_status
@@ -72,8 +73,14 @@ class SmartBatteryCard extends LitBase {
         charge_remaining_time_entity: battery.charge_remaining_time_entity || null,
         ac_out_power_entity: battery.ac_out_power_entity || null,
         ac_out_power_invert: !!battery.ac_out_power_invert,
+        remaining_energy_entity: battery.remaining_energy_entity || null,
+        forecast_efficiency: typeof battery.forecast_efficiency === 'number'
+          ? Math.max(0.01, Math.min(1, battery.forecast_efficiency))
+          : 0.85,
+        include_in_outage_forecast: battery.include_in_outage_forecast !== false,
         invert: !!battery.invert,
       })),
+      outage_forecast_mode: config.outage_forecast_mode === 'all' ? 'all' : 'selected',
       selected_battery: typeof config.selected_battery === 'number' ? Math.max(0, Math.min(config.selected_battery, config.batteries.length - 1)) : 0,
       outage_status_entity: config.outage_status_entity || null,
       outage_end_time_entity: config.outage_end_time_entity || null,
@@ -91,7 +98,10 @@ class SmartBatteryCard extends LitBase {
 
   getCardSize() {
     const numBatteries = this._config?.batteries?.length || 1;
-    return Math.ceil(numBatteries / 4) + 2;
+    const forecastSize = this._config?.outage_forecast_mode === 'all'
+      ? Math.ceil(numBatteries / 2) + 2
+      : 2;
+    return Math.ceil(numBatteries / 4) + forecastSize;
   }
 
   _pct(batteryIndex) {
@@ -194,8 +204,9 @@ class SmartBatteryCard extends LitBase {
   }
 
   _formatMinutes(totalMinutes) {
-    const hours = Math.floor(totalMinutes / 60);
-    const minutes = Math.round(totalMinutes % 60);
+    const roundedMinutes = Math.max(0, Math.round(totalMinutes));
+    const hours = Math.floor(roundedMinutes / 60);
+    const minutes = roundedMinutes % 60;
 
     if (hours > 0 && minutes > 0) {
       return `${hours}h ${minutes}m`;
@@ -231,6 +242,76 @@ class SmartBatteryCard extends LitBase {
       return `${(watts / 1000).toFixed(2)} kW`;
     }
     return `${Math.round(watts)} W`;
+  }
+
+  _remainingEnergyWh(batteryIndex) {
+    const battery = this._config.batteries[batteryIndex];
+    if (!battery?.remaining_energy_entity) return null;
+
+    const st = this.hass?.states?.[battery.remaining_energy_entity];
+    if (!this._validEntityState(st)) return null;
+
+    const value = Number(st.state);
+    if (!Number.isFinite(value) || value <= 0) return null;
+
+    const unit = String(st.attributes?.unit_of_measurement || '')
+      .trim()
+      .toLowerCase();
+
+    if (unit === 'kwh') return value * 1000;
+    if (unit === 'mwh') return value * 1000000;
+    if (unit === 'wh') return value;
+    return null;
+  }
+
+  /**
+   * Runtime forecast priority:
+   * 1. Native discharge-time sensor from the battery integration.
+   * 2. Approximation from normalized remaining energy and current AC output.
+   */
+  _batteryRuntimeForecast(batteryIndex) {
+    const battery = this._config.batteries[batteryIndex];
+    if (!battery) return { minutes: null, approximate: false, source: 'unavailable' };
+
+    if (battery.remaining_time_entity) {
+      const dischargeSt = this.hass?.states?.[battery.remaining_time_entity];
+      if (this._validEntityState(dischargeSt)) {
+        const dischargeMinutes = this._parseTimeValue(dischargeSt.state);
+        if (Number.isFinite(dischargeMinutes) && dischargeMinutes > 0) {
+          return {
+            minutes: dischargeMinutes,
+            approximate: false,
+            source: 'runtime_sensor',
+          };
+        }
+      }
+    }
+
+    const remainingEnergyWh = this._remainingEnergyWh(batteryIndex);
+    const outputPowerW = this._acOutPower(batteryIndex);
+    if (remainingEnergyWh !== null && outputPowerW !== null && outputPowerW > 0) {
+      const minutes = (remainingEnergyWh * battery.forecast_efficiency / outputPowerW) * 60;
+      if (Number.isFinite(minutes) && minutes > 0) {
+        return {
+          minutes,
+          approximate: true,
+          source: 'energy_and_power',
+        };
+      }
+    }
+
+    return { minutes: null, approximate: false, source: 'unavailable' };
+  }
+
+  _formatSignedMinutes(minutes) {
+    if (!Number.isFinite(minutes)) return 'No data';
+    const rounded = Math.round(minutes);
+    const sign = rounded >= 0 ? '+' : '−';
+    return `${sign}${this._formatMinutes(Math.abs(rounded))}`;
+  }
+
+  _batteryNoun(count) {
+    return count === 1 ? 'battery' : 'batteries';
   }
 
   /**
@@ -340,11 +421,16 @@ class SmartBatteryCard extends LitBase {
    * Returns: {
    *   sufficientForOutage: boolean|null,
    *   canChargeBeforeNext: boolean|null,
-   *   warningLevel: 'critical'|'warning'|'info'|'ok',
+   *   warningLevel: 'critical'|'warning'|'info'|'ok'|'unknown',
    *   message: string
    * }
    */
   _analyzeOutageSituation() {
+    if (this._config.outage_forecast_mode === 'all') {
+      const multiBatteryAnalysis = this._analyzeAllBatteriesForOutage();
+      if (multiBatteryAnalysis) return multiBatteryAnalysis;
+    }
+
     const selectedIdx = this._config.selected_battery;
     const battery = this._config.batteries[selectedIdx];
     if (!battery) return { sufficientForOutage: null, canChargeBeforeNext: null, warningLevel: 'ok', message: '' };
@@ -409,6 +495,91 @@ class SmartBatteryCard extends LitBase {
     }
 
     return { sufficientForOutage, canChargeBeforeNext, warningLevel, message };
+  }
+
+  _analyzeAllBatteriesForOutage() {
+    const outageStatus = this._getOutageStatus();
+    if (!outageStatus.isActive || outageStatus.minutesRemaining === null) return null;
+
+    const includedBatteries = this._config.batteries
+      .map((battery, index) => ({ battery, index }))
+      .filter(({ battery }) => battery.include_in_outage_forecast);
+
+    if (includedBatteries.length === 0) {
+      return {
+        sufficientForOutage: null,
+        canChargeBeforeNext: null,
+        warningLevel: 'unknown',
+        message: '❔ No batteries are included in the outage forecast',
+        batteryForecasts: [],
+      };
+    }
+
+    const batteryForecasts = includedBatteries.map(({ battery, index }) => {
+      const runtime = this._batteryRuntimeForecast(index);
+      const isKnown = Number.isFinite(runtime.minutes);
+      const marginMinutes = isKnown
+        ? runtime.minutes - outageStatus.minutesRemaining
+        : null;
+
+      return {
+        index,
+        name: battery.name || `Battery ${index + 1}`,
+        runtimeMinutes: runtime.minutes,
+        marginMinutes,
+        sufficient: isKnown ? marginMinutes >= 0 : null,
+        approximate: runtime.approximate,
+        source: runtime.source,
+      };
+    });
+
+    const known = batteryForecasts.filter(item => item.sufficient !== null);
+    const unknown = batteryForecasts.filter(item => item.sufficient === null);
+    const sufficient = known.filter(item => item.sufficient);
+    const insufficient = known.filter(item => !item.sufficient);
+
+    let warningLevel = 'ok';
+    let message = '';
+
+    if (known.length === 0) {
+      warningLevel = 'unknown';
+      message = `❔ Runtime unavailable for all ${batteryForecasts.length} ${this._batteryNoun(batteryForecasts.length)}`;
+    } else if (insufficient.length > 0) {
+      warningLevel = 'critical';
+      const firstToStop = [...insufficient].sort(
+        (left, right) => left.runtimeMinutes - right.runtimeMinutes
+      )[0];
+      const batteryQualifier = `${unknown.length > 0 ? 'known ' : ''}${this._batteryNoun(known.length)}`;
+      const coverage = sufficient.length === 0
+        ? `None of ${known.length} ${batteryQualifier} should last`
+        : `${sufficient.length} of ${known.length} ${batteryQualifier} should last`;
+      const unknownSuffix = unknown.length > 0 ? ` • ${unknown.length} unavailable` : '';
+      message = `⚠️ ${coverage} • ${firstToStop.name} may stop ${this._formatMinutes(Math.abs(firstToStop.marginMinutes))} early${unknownSuffix}`;
+    } else if (unknown.length > 0) {
+      warningLevel = 'unknown';
+      const unavailableNames = unknown.map(item => item.name).join(', ');
+      message = `❔ ${known.length} of ${batteryForecasts.length} forecasts available • ${unavailableNames}: no runtime data`;
+    } else {
+      const lowestMargin = Math.min(...sufficient.map(item => item.marginMinutes));
+      if (lowestMargin < 30) {
+        warningLevel = 'warning';
+        message = `⚡ All ${sufficient.length} ${this._batteryNoun(sufficient.length)} should last • lowest buffer ${this._formatMinutes(lowestMargin)}`;
+      } else {
+        warningLevel = 'ok';
+        message = `✅ All ${sufficient.length} ${this._batteryNoun(sufficient.length)} should last • lowest buffer ${this._formatMinutes(lowestMargin)}`;
+      }
+    }
+
+    return {
+      sufficientForOutage: known.length === 0
+        ? null
+        : (unknown.length === 0 && insufficient.length === 0),
+      canChargeBeforeNext: null,
+      warningLevel,
+      message,
+      batteryForecasts,
+      outageMinutesRemaining: outageStatus.minutesRemaining,
+    };
   }
 
   /**
@@ -584,6 +755,45 @@ class SmartBatteryCard extends LitBase {
     `;
   }
 
+  _renderOutageForecastRows(analysis) {
+    if (!analysis?.batteryForecasts?.length || !Number.isFinite(analysis.outageMinutesRemaining)) {
+      return '';
+    }
+
+    return html`
+      <div class="outage-forecast-list" aria-label="Battery outage forecasts">
+        ${analysis.batteryForecasts.map(forecast => {
+          const isKnown = Number.isFinite(forecast.runtimeMinutes);
+          const statusClass = forecast.sufficient === null
+            ? 'unknown'
+            : (forecast.sufficient ? 'sufficient' : 'critical');
+          const fillPercent = isKnown && analysis.outageMinutesRemaining > 0
+            ? Math.max(2, Math.min(100, (forecast.runtimeMinutes / analysis.outageMinutesRemaining) * 100))
+            : 0;
+          const runtimeText = isKnown
+            ? `${forecast.approximate ? '≈' : ''}${this._formatMinutes(forecast.runtimeMinutes)}`
+            : 'No data';
+          const sourceTitle = forecast.approximate
+            ? 'Estimated from remaining energy and current output power'
+            : (isKnown ? 'Reported by the battery runtime sensor' : 'Runtime forecast unavailable');
+
+          return html`
+            <div class="outage-forecast-row ${statusClass}" title="${sourceTitle}">
+              <div class="forecast-row-values">
+                <span class="forecast-battery-name">${forecast.name}</span>
+                <span class="forecast-runtime">${runtimeText}</span>
+                <span class="forecast-margin">${isKnown ? this._formatSignedMinutes(forecast.marginMinutes) : '—'}</span>
+              </div>
+              <div class="forecast-track" aria-hidden="true">
+                <span class="forecast-fill" style="width: ${fillPercent}%"></span>
+              </div>
+            </div>
+          `;
+        })}
+      </div>
+    `;
+  }
+
   render() {
     if (!this._config) return html``;
 
@@ -617,7 +827,7 @@ class SmartBatteryCard extends LitBase {
           ${batteryElements}
         </div>
         
-        <!-- Outage information (for selected battery) -->
+        <!-- Outage information and configured battery forecast -->
         ${hasOutageConfig ? html`<div class="outage-info-container">
           <!-- Outage Analysis Warning/Info -->
           ${analysis.message ? html`
@@ -625,6 +835,8 @@ class SmartBatteryCard extends LitBase {
               <span class="analysis-message">${analysis.message}</span>
             </div>
           ` : ''}
+
+          ${outageStatus.isActive ? this._renderOutageForecastRows(analysis) : ''}
           
           <!-- Current Outage Info (show only if active) -->
           ${outageStatus.isActive ? html`
@@ -1108,9 +1320,100 @@ class SmartBatteryCard extends LitBase {
         background: var(--success-color, #43a047);
         color: white;
       }
+      .outage-analysis.unknown {
+        background: var(--secondary-background-color, rgba(127, 127, 127, 0.18));
+        border: 1px solid var(--divider-color, rgba(127, 127, 127, 0.35));
+        color: var(--primary-text-color);
+      }
       .analysis-message {
         line-height: 1.4;
         word-break: break-word;
+      }
+
+      .outage-forecast-list {
+        display: grid;
+        grid-template-columns: 1fr;
+        gap: 6px;
+        margin-top: 6px;
+      }
+      .outage-forecast-row {
+        padding: 7px 9px;
+        border-radius: 7px;
+        background: var(--secondary-background-color, rgba(127, 127, 127, 0.10));
+        border-left: 3px solid var(--divider-color, rgba(127, 127, 127, 0.45));
+        box-sizing: border-box;
+      }
+      .outage-forecast-row.sufficient {
+        border-left-color: var(--success-color, #43a047);
+      }
+      .outage-forecast-row.critical {
+        border-left-color: var(--error-color, #e53935);
+      }
+      .outage-forecast-row.unknown {
+        opacity: 0.78;
+      }
+      .forecast-row-values {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) auto auto;
+        align-items: baseline;
+        gap: 8px;
+        font-size: 12px;
+        line-height: 1.3;
+      }
+      .forecast-battery-name {
+        min-width: 0;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+        color: var(--primary-text-color);
+        font-weight: 700;
+      }
+      .forecast-runtime {
+        color: var(--primary-text-color);
+        font-variant-numeric: tabular-nums;
+        font-weight: 600;
+      }
+      .forecast-margin {
+        min-width: 52px;
+        color: var(--secondary-text-color, #9b9b9b);
+        font-variant-numeric: tabular-nums;
+        font-weight: 700;
+        text-align: right;
+      }
+      .outage-forecast-row.sufficient .forecast-margin {
+        color: var(--success-color, #43a047);
+      }
+      .outage-forecast-row.critical .forecast-margin {
+        color: var(--error-color, #e53935);
+      }
+      .forecast-track {
+        height: 4px;
+        margin-top: 5px;
+        overflow: hidden;
+        border-radius: 999px;
+        background: var(--divider-color, rgba(127, 127, 127, 0.24));
+      }
+      .forecast-fill {
+        display: block;
+        height: 100%;
+        border-radius: inherit;
+        background: var(--secondary-text-color, #9b9b9b);
+      }
+      .outage-forecast-row.sufficient .forecast-fill {
+        background: var(--success-color, #43a047);
+      }
+      .outage-forecast-row.critical .forecast-fill {
+        background: var(--error-color, #e53935);
+      }
+
+      @media (max-width: 420px) {
+        .forecast-row-values {
+          gap: 5px;
+          font-size: 11px;
+        }
+        .forecast-margin {
+          min-width: 46px;
+        }
       }
       
       /* Compact Outage Styles */
@@ -1225,4 +1528,4 @@ if (!customElements.get('smart-battery-card')) {
   customElements.define('smart-battery-card', SmartBatteryCard);
 }
 
-console.info('%c SMART-BATTERY-CARD %c v0.5.2 ', 'background:#0b8043;color:white;border-radius:3px 0 0 3px;padding:2px 4px', 'background:#263238;color:#fff;border-radius:0 3px 3px 0;padding:2px 4px');
+console.info('%c SMART-BATTERY-CARD %c v0.6.0 ', 'background:#0b8043;color:white;border-radius:3px 0 0 3px;padding:2px 4px', 'background:#263238;color:#fff;border-radius:0 3px 3px 0;padding:2px 4px');

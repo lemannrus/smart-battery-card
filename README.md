@@ -44,8 +44,11 @@ A custom Lovelace card for Home Assistant that displays battery levels with beau
   - Remaining time (discharge or charge)
   - Power output
   - Status indicator (charging/discharging/idle)
-- **Selected Battery for Outage Analysis**: Choose which battery to use for outage calculations
-- **Unified Outage Information**: One outage display for all batteries
+- **Multi-Battery Outage Forecast**: Compare every included battery with the remaining outage duration
+  - See how many batteries should last until power returns
+  - See the runtime and positive/negative time margin for each battery
+  - Distinguishes native runtime sensors from approximate energy/power forecasts
+- **Legacy Selected Battery Analysis**: Keep using one selected battery when preferred
 
 ### Battery Display (v0.3.4 Design) 🌊
 - **Circular Battery Design**: Beautiful circular indicators with liquid-like fill animation
@@ -182,11 +185,11 @@ batteries:
     remaining_time_entity: sensor.river_2_discharge_remaining_time
     charge_remaining_time_entity: sensor.river_2_charge_remaining_time
     ac_out_power_entity: sensor.river_2_ac_out_power
-  - entity: sensor.delta_pro_battery_level
-    name: Delta Pro
-    remaining_time_entity: sensor.delta_pro_discharge_remaining_time
-    charge_remaining_time_entity: sensor.delta_pro_charge_remaining_time
-    ac_out_power_entity: sensor.delta_pro_ac_out_power
+  - entity: sensor.marstek_state_of_charge
+    name: Marstek
+    remaining_energy_entity: sensor.marstek_remaining_capacity
+    ac_out_power_entity: sensor.marstek_off_grid_power
+    forecast_efficiency: 0.85
   - entity: sensor.stream_pro_power_battery_2
     name: Stream Pro
     remaining_time_entity: sensor.stream_pro_remaining_time
@@ -194,7 +197,10 @@ batteries:
     ac_out_power_entity: sensor.stream_pro_power_ac
     ac_out_power_invert: true # Stream reports battery export as a negative value
 
-# Which battery to use for outage analysis (0 = first battery, 1 = second, etc.)
+# Analyze every battery during an active outage
+outage_forecast_mode: all
+
+# Used by legacy selected mode and by next-outage charging analysis
 selected_battery: 0
 
 # Outage integration entities (shared for all batteries)
@@ -220,7 +226,8 @@ For EcoFlow sensor data, install the [EcoFlow Cloud integration](https://github.
 | Option | Type | Default | Description |
 |--------|------|---------|-------------|
 | `batteries` | array | **Required** | Array of battery objects (see Battery Object below) |
-| `selected_battery` | number | `0` | Which battery to use for outage analysis (0 = first, 1 = second, etc.) |
+| `outage_forecast_mode` | string | `selected` | `all` compares every included battery during an active outage; `selected` preserves the legacy single-battery analysis |
+| `selected_battery` | number | `0` | Battery used by legacy `selected` mode and next-outage charging analysis (0 = first, 1 = second, etc.) |
 | `green` | number | `60` | Battery percentage threshold for green color (applied to all) |
 | `yellow` | number | `25` | Battery percentage threshold for yellow color (applied to all) |
 | `precision` | number | `0` | Number of decimal places for percentage display |
@@ -238,6 +245,9 @@ Each battery in the `batteries` array can have these properties:
 | `charge_remaining_time_entity` | string | `null` | Optional entity ID for charge remaining time (in minutes) |
 | `ac_out_power_entity` | string | `null` | Optional entity ID for AC output power (in watts) |
 | `ac_out_power_invert` | boolean | `false` | Invert the AC power sign before display. Use for signed sensors where battery export is negative; power in the opposite direction stays hidden |
+| `remaining_energy_entity` | string | `null` | Optional normalized remaining-energy sensor. Supports `Wh`, `kWh`, or `MWh`; used with AC output when no native discharge runtime is available |
+| `forecast_efficiency` | number | `0.85` | Efficiency factor from `0.01` to `1.0` for the approximate energy/power runtime calculation |
+| `include_in_outage_forecast` | boolean | `true` | Exclude a non-critical or unrelated battery from `outage_forecast_mode: all` when set to `false` |
 | `invert` | boolean | `false` | Invert the battery reading (for sensors that report inversely) |
 
 ### Outage Integration Options
@@ -249,7 +259,28 @@ Each battery in the `batteries` array can have these properties:
 | `next_outage_time_entity` | string | `null` | Entity ID for next scheduled outage start time. Supports ISO datetime format or Unix timestamp |
 | `outage_schedule_status_entity` | string | `null` | Optional Yasno v3 `status_today` sensor. Used to distinguish `emergency_shutdowns` and `no_outages` from missing data |
 
+### Multi-Battery Outage Forecast
+
+Set `outage_forecast_mode: all` to show one summary plus a compact row for every included battery during an active outage. Each row shows its expected runtime and its margin relative to the outage end:
+
+```text
+Delta 2   1h 45m   −1h 35m
+River 2   4h 10m   +50m
+Marstek   ≈7h 30m  +4h 10m
+```
+
+The card does not add independent battery runtimes together. The summary reports how many batteries should last and identifies the first one expected to stop. This is safer when separate batteries power separate loads.
+
+Forecast source priority:
+
+1. `remaining_time_entity` — native discharge estimate reported by the battery integration.
+2. `remaining_energy_entity × forecast_efficiency ÷ ac_out_power_entity` — approximate fallback, marked with `≈`.
+3. No estimate — displayed as `No data`; missing values are never treated as zero runtime.
+
+`remaining_energy_entity` must already expose a normalized value with a correct `Wh`, `kWh`, or `MWh` unit. Firmware-specific scaling corrections belong in the Home Assistant integration or a template sensor, not in the card.
+
 **Version Notes:** 
+- **v0.6.0**: Multi-battery outage forecast with native and energy-based runtime estimates
 - **v0.5.2**: Optional sign inversion for AC output sensors such as EcoFlow Stream Pro `Power AC`
 - **v0.5.1**: Proportional three-battery scaling for narrow tablet dashboard columns
 - **v0.5.0**: Compact 3–4 battery rows and HA Yasno Outages v3 compatibility

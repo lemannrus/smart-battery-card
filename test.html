@@ -5,7 +5,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <link rel="icon" href="data:,">
-  <title>Smart Battery Card Test - v0.5.2</title>
+  <title>Smart Battery Card Test - v0.6.0</title>
   <style>
     :root {
       --primary-text-color: #e1e1e1;
@@ -83,16 +83,16 @@
 
 <body>
   <h1>🔋 Smart Battery Card Test Page</h1>
-  <div class="subtitle">Version 0.5.2 - Signed AC Output Support
+  <div class="subtitle">Version 0.6.0 - Multi-Battery Outage Forecast
   </div>
 
   <div
     style="text-align: center; margin: 20px auto; padding: 15px; background: rgba(67, 160, 71, 0.1); border-radius: 8px; max-width: 800px; border: 1px solid rgba(67, 160, 71, 0.3);">
-    <div style="font-size: 13px; color: var(--secondary-text-color); margin-bottom: 8px;">✨ What's New in v0.5.2</div>
+    <div style="font-size: 13px; color: var(--secondary-text-color); margin-bottom: 8px;">✨ What's New in v0.6.0</div>
     <div style="font-size: 12px; color: var(--primary-text-color); line-height: 1.6;">
-      • Signed AC power sensors can invert export explicitly<br>
-      • Negative Stream Pro Power AC values display as positive output<br>
-      • Opposite-direction power remains hidden
+      • Per-battery runtime and outage margin for all included batteries<br>
+      • Approximate runtime fallback from remaining energy and output power<br>
+      • Explicit unknown-data and forecast exclusion states
     </div>
   </div>
 
@@ -159,6 +159,27 @@
           attributes: {
             friendly_name: 'Delta Pro Battery',
             unit_of_measurement: '%'
+          }
+        },
+        'sensor.marstek_battery': {
+          state: '96',
+          attributes: {
+            friendly_name: 'Marstek Battery',
+            unit_of_measurement: '%'
+          }
+        },
+        'sensor.marstek_remaining_energy': {
+          state: '4.94',
+          attributes: {
+            friendly_name: 'Marstek Remaining Energy',
+            unit_of_measurement: 'kWh'
+          }
+        },
+        'sensor.marstek_offgrid_power': {
+          state: '160',
+          attributes: {
+            friendly_name: 'Marstek Off-grid Power',
+            unit_of_measurement: 'W'
           }
         },
         'sensor.river_2_discharge_remaining_time': dischargeTime !== null ? {
@@ -610,6 +631,69 @@
 
       // Multi-Battery Tests
       const multiBatteryConfigs = [
+        {
+          label: '3 Batteries - All-battery outage forecast (native + approximate runtime)',
+          config: {
+            batteries: [
+              {
+                entity: 'sensor.delta_2_battery',
+                name: 'Delta 2',
+                remaining_time_entity: 'sensor.delta_2_discharge_remaining_time',
+                ac_out_power_entity: 'sensor.delta_2_ac_out_power'
+              },
+              {
+                entity: 'sensor.river_2_battery',
+                name: 'River 2',
+                remaining_time_entity: 'sensor.river_2_discharge_remaining_time',
+                ac_out_power_entity: 'sensor.river_2_ac_out_power'
+              },
+              {
+                entity: 'sensor.marstek_battery',
+                name: 'Marstek',
+                remaining_energy_entity: 'sensor.marstek_remaining_energy',
+                ac_out_power_entity: 'sensor.marstek_offgrid_power',
+                forecast_efficiency: 0.85
+              }
+            ],
+            outage_forecast_mode: 'all',
+            selected_battery: 0,
+            outage_status_entity: 'sensor.outage_status',
+            outage_end_time_entity: 'sensor.outage_end',
+            next_outage_time_entity: 'sensor.next_outage',
+            palette: 'gradient',
+            segments: 5,
+            gap: 2
+          },
+          hass: createMockHass(65, 90, 0, 450, true, 120)
+        },
+        {
+          label: '3 Batteries - Partial forecast (unknown + excluded battery)',
+          config: {
+            batteries: [
+              {
+                entity: 'sensor.delta_2_battery',
+                name: 'Delta 2',
+                remaining_time_entity: 'sensor.delta_2_discharge_remaining_time'
+              },
+              {
+                entity: 'sensor.river_2_battery',
+                name: 'River 2'
+              },
+              {
+                entity: 'sensor.marstek_battery',
+                name: 'Portable reserve',
+                include_in_outage_forecast: false
+              }
+            ],
+            outage_forecast_mode: 'all',
+            outage_status_entity: 'sensor.outage_status',
+            outage_end_time_entity: 'sensor.outage_end',
+            palette: 'threshold',
+            segments: 5,
+            gap: 2
+          },
+          hass: createMockHass(65, 150, 0, 450, true, 120)
+        },
         {
           label: '2 Batteries - Delta 2 (65%) + River 2 (80%) - Active Outage',
           config: {
